@@ -16,10 +16,8 @@ Features include:
 2. **Inject it in Roblox** using your favorite executor with this loader code:
 
     ```lua
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/YourUsername/YourRepo/main/main.lua"))()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/ljashub/bloxstrike-beta/main/main.lua"))()
     ```
-
-    Replace `YourUsername` and `YourRepo` with your actual GitHub username and repo name.
 
 ## Features
 
@@ -36,4 +34,4 @@ Features include:
 
 ## Credits
 
-- Script by [Tinkus144Hz](https://github.com/Tinkus144Hz)
+- Script by [ljas](https://github.com/ljashub)
