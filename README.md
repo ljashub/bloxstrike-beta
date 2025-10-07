@@ -1,37 +1,28 @@
-# Roblox ESP Script (Box + Name + Distance + Head Circle)
+# Roblox ESP Script (Box + Name + Distance + Head ESP Circle)
 
-This repository contains a Roblox Lua ESP (Extrasensory Perception) script for use with Roblox executors.  
-Features include:
+This repository contains a Roblox ESP script with:
+- 2D Box ESP for all players (except yourself)
+- Name tag above the box
+- Distance below the box
+- Head ESP (circle around head)
+- Dynamic scaling with distance
+- Infinite Jump and Speed UI
 
-- **2D Box ESP** around all players (except yourself)
-- **Name tag** above the box
-- **Distance indicator** below the box (shows distance in studs)
-- **Head ESP Circle**: a circle is drawn around each player's head
-- **Dynamic scaling**: ESP elements scale with distance
-- **Infinite Jump** and a simple Speed UI
+## How to use
 
-## How to Use
-
-1. **Upload the script** (`main.lua`) to a public GitHub repository (if not already).
-2. **Inject it in Roblox** using your favorite executor with this loader code:
+1. Open your Roblox executor (Synapse, KRNL, Fluxus, etc.)
+2. Paste this loader code and run:
 
     ```lua
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/ljashub/bloxstrike-beta/main/main.lua"))()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/ljashub/bloxstrike-beta/main/files/lua"))()
     ```
 
-## Features
+## Info
 
-- ESP overlays update live and work after respawn.
-- No duplicate overlays.
-- Head and box ESP scale down at distance.
-- Simple, reliable, and does not require any paid tools.
-
-## Disclaimer
-
-- This script is for **educational purposes only**.
-- Use responsibly and according to the Roblox Terms of Service.
-- The author is not responsible for misuse or any bans that may result from using this script.
+- Script auto-updates overlays after respawn and keeps everything in sync.
+- For educational purposes only!
+- Use at your own risk. The author is not responsible for bans or misuse.
 
 ## Credits
 
-- Script by [ljas](https://github.com/ljashub)
+Script and repository by [ljas](https://github.com/ljashub)
