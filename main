@@ -1,0 +1,328 @@
+local player = game.Players.LocalPlayer
+local userInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+
+local humanoid
+local rootPart
+local jumping = false
+local highestSpeed = 0
+local lastJump = tick()
+local bunnyhopActive = false
+local lastBunnyhop = tick()
+local bunnyhopResetDelay = 5
+
+local BOX_COLOR_ALIVE = Color3.fromRGB(120,180,255)
+local BOX_COLOR_DEAD  = Color3.fromRGB(255,60,60)
+local BOX_THICKNESS = 2
+local BOX_Y_OFFSET = -3
+local BOX_PIXEL_PER_STUD = 32
+local BOX_MIN_SCALE = 0.3
+local BOX_MAX_SCALE = 1.2
+local BOX_MIN_DIST = 14
+local HEALTHBAR_WIDTH = 10
+local HEALTHBAR_OFFSET = 4
+
+local espConnections = {}
+
+local function removeOldSpeedGui()
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if playerGui then
+        local old = playerGui:FindFirstChild("SpeedDisplay")
+        if old then old:Destroy() end
+    end
+end
+
+local function createSpeedGui()
+    removeOldSpeedGui()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "SpeedDisplay"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+
+    local maxLabel = Instance.new("TextLabel")
+    maxLabel.Name = "MaxSpeedLabel"
+    maxLabel.AnchorPoint = Vector2.new(0.5, 1)
+    maxLabel.Position = UDim2.new(0.5, 0, 0.86, 0)
+    maxLabel.Size = UDim2.new(0, 220, 0, 32)
+    maxLabel.BackgroundTransparency = 1
+    maxLabel.TextColor3 = Color3.new(0, 0, 0)
+    maxLabel.TextStrokeTransparency = 1
+    maxLabel.TextScaled = true
+    maxLabel.Font = Enum.Font.SourceSansBold
+    maxLabel.Text = "(0.0u/s)"
+    maxLabel.Parent = screenGui
+
+    local label = Instance.new("TextLabel")
+    label.Name = "SpeedLabel"
+    label.AnchorPoint = Vector2.new(0.5, 1)
+    label.Position = UDim2.new(0.5, 0, 0.90, 0)
+    label.Size = UDim2.new(0, 220, 0, 40)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = Color3.new(0, 0, 0)
+    label.TextStrokeTransparency = 1
+    label.TextScaled = true
+    label.Font = Enum.Font.SourceSansBold
+    label.Text = "0.0u/s"
+    label.Parent = screenGui
+
+    return label, maxLabel
+end
+
+local speedLabel, maxLabel = createSpeedGui()
+
+local function getHumanoidAndRoot()
+    local character = player.Character or player.CharacterAdded:Wait()
+    local hum = character:FindFirstChildOfClass("Humanoid")
+    while not hum do
+        character.ChildAdded:Wait()
+        hum = character:FindFirstChildOfClass("Humanoid")
+    end
+    local rp = character:FindFirstChild("HumanoidRootPart")
+    while not rp do
+        character.ChildAdded:Wait()
+        rp = character:FindFirstChild("HumanoidRootPart")
+    end
+    return hum, rp
+end
+
+local function removeEsp(character)
+    if espConnections[character] then
+        for _,conn in ipairs(espConnections[character]) do
+            if conn then conn:Disconnect() end
+        end
+        espConnections[character] = nil
+    end
+    local bb = character:FindFirstChild("NameTag")
+    if bb then bb:Destroy() end
+    local bbHealth = character:FindFirstChild("HealthBar")
+    if bbHealth then bbHealth:Destroy() end
+end
+
+local function createEsp(character, playerObj)
+    removeEsp(character)
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    local head = character:FindFirstChild("Head")
+    local hum = character:FindFirstChildOfClass("Humanoid")
+    if not rootPart or not head or not hum then return end
+
+    local function getCharSize()
+        local height, width = 5, 2
+        local torso = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
+        if torso then width = torso.Size.X + 1 end
+        local diff = (head.Position - rootPart.Position).Magnitude
+        height = diff*2 + 2
+        return height, width
+    end
+    local height, width = getCharSize()
+
+    local bb = Instance.new("BillboardGui")
+    bb.Name = "NameTag"
+    bb.Adornee = rootPart
+    bb.Size = UDim2.new(0, math.floor(width*BOX_PIXEL_PER_STUD), 0, math.floor(height*BOX_PIXEL_PER_STUD))
+    bb.StudsOffset = Vector3.new(0, height/2 + BOX_Y_OFFSET, 0)
+    bb.AlwaysOnTop = true
+    bb.Parent = rootPart
+
+    local frame = Instance.new("Frame")
+    frame.Name = "PlayerBox"
+    frame.Size = UDim2.new(1,0,1,0)
+    frame.BackgroundTransparency = 1
+    frame.BorderSizePixel = 0
+    frame.ZIndex = 1
+    frame.Parent = bb
+
+    local function makeLine(pos, size)
+        local line = Instance.new("Frame")
+        line.BackgroundColor3 = BOX_COLOR_ALIVE
+        line.BorderSizePixel = 0
+        line.BackgroundTransparency = 0
+        line.ZIndex = 2
+        line.Position = pos
+        line.Size = size
+        line.Parent = frame
+    end
+    makeLine(UDim2.new(0,0,0,0), UDim2.new(1,0,0,BOX_THICKNESS))
+    makeLine(UDim2.new(0,0,1,-BOX_THICKNESS), UDim2.new(1,0,0,BOX_THICKNESS))
+    makeLine(UDim2.new(0,0,0,0), UDim2.new(0,BOX_THICKNESS,1,0))
+    makeLine(UDim2.new(1,-BOX_THICKNESS,0,0), UDim2.new(0,BOX_THICKNESS,1,0))
+
+    local distLabel = Instance.new("TextLabel")
+    distLabel.Name = "ESPDist"
+    distLabel.Size = UDim2.new(1,0,0,22)
+    distLabel.Position = UDim2.new(0,0,1,6)
+    distLabel.BackgroundTransparency = 1
+    distLabel.TextColor3 = BOX_COLOR_ALIVE
+    distLabel.TextStrokeTransparency = 0.6
+    distLabel.TextScaled = true
+    distLabel.Font = Enum.Font.SourceSansBold
+    distLabel.Text = "..."
+    distLabel.Parent = bb
+
+    local bbHealth = Instance.new("BillboardGui")
+    bbHealth.Name = "HealthBar"
+    bbHealth.Adornee = rootPart
+    local boxPxW = math.floor(width*BOX_PIXEL_PER_STUD)
+    local boxPxH = math.floor(height*BOX_PIXEL_PER_STUD)
+    bbHealth.Size = UDim2.new(0, HEALTHBAR_WIDTH, 0, boxPxH)
+    bbHealth.StudsOffset = Vector3.new(-(width/2) - 0.41, height/2 + BOX_Y_OFFSET, 0)
+    bbHealth.AlwaysOnTop = true
+    bbHealth.Parent = character
+
+    local bgBar = Instance.new("Frame")
+    bgBar.Name = "BgBar"
+    bgBar.Size = UDim2.new(1,0,1,0)
+    bgBar.Position = UDim2.new(0,0,0,0)
+    bgBar.BackgroundColor3 = Color3.fromRGB(40,40,40)
+    bgBar.BorderSizePixel = 0
+    bgBar.BackgroundTransparency = 0.3
+    bgBar.Parent = bbHealth
+
+    local fgBar = Instance.new("Frame")
+    fgBar.Name = "FgBar"
+    fgBar.AnchorPoint = Vector2.new(0,1)
+    fgBar.Position = UDim2.new(0,0,1,0)
+    fgBar.Size = UDim2.new(1,0,1,0)
+    fgBar.BackgroundColor3 = Color3.fromRGB(100,255,100)
+    fgBar.BorderSizePixel = 0
+    fgBar.BackgroundTransparency = 0
+    fgBar.Parent = bbHealth
+
+    local connections = {}
+    connections[1] = RunService.RenderStepped:Connect(function()
+        if not bb.Parent or not bbHealth.Parent or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
+        local myRoot = player.Character:FindFirstChild("HumanoidRootPart")
+        local dist = (myRoot.Position - rootPart.Position).Magnitude
+        distLabel.Text = string.format("%.1f studs", dist)
+        local scale = BOX_MAX_SCALE
+        if dist > BOX_MIN_DIST then
+            scale = math.max(BOX_MIN_SCALE, BOX_MAX_SCALE * (BOX_MIN_DIST/dist))
+        end
+        local height, width = getCharSize()
+        local boxPxW = math.floor(width*BOX_PIXEL_PER_STUD*scale)
+        local boxPxH = math.floor(height*BOX_PIXEL_PER_STUD*scale)
+        bb.Size = UDim2.new(0, boxPxW, 0, boxPxH)
+        bbHealth.Size = UDim2.new(0, HEALTHBAR_WIDTH*scale, 0, boxPxH)
+        bbHealth.StudsOffset = Vector3.new(-(width*scale/2)-((HEALTHBAR_WIDTH*scale)/BOX_PIXEL_PER_STUD)-HEALTHBAR_OFFSET/BOX_PIXEL_PER_STUD, height/2 + BOX_Y_OFFSET, 0)
+        distLabel.TextScaled = true
+
+        local h = character:FindFirstChildOfClass("Humanoid")
+        local hpFrac = math.clamp(h.Health/h.MaxHealth,0,1)
+        fgBar.Size = UDim2.new(1,0,hpFrac,0)
+        fgBar.Position = UDim2.new(0,0,1,0)
+        fgBar.AnchorPoint = Vector2.new(0,1)
+        fgBar.BackgroundColor3 = Color3.fromRGB(
+            255-(math.floor(255*hpFrac)),
+            math.floor(255*hpFrac),
+            0
+        )
+
+        local isDead = (h and h.Health == 0)
+        local boxColor = isDead and BOX_COLOR_DEAD or BOX_COLOR_ALIVE
+        for _,line in ipairs(frame:GetChildren()) do
+            if line:IsA("Frame") then
+                line.BackgroundColor3 = boxColor
+            end
+        end
+        distLabel.TextColor3 = boxColor
+    end)
+    if hum then
+        connections[2] = hum.Died:Connect(function()
+            removeEsp(character)
+        end)
+    end
+    connections[3] = character.AncestryChanged:Connect(function(_, parent)
+        if not parent then
+            removeEsp(character)
+        end
+    end)
+    espConnections[character] = connections
+end
+
+local function setupEspForPlayer(plr)
+    local function tryCreateEsp(character)
+        if character:FindFirstChild("HumanoidRootPart") and character:FindFirstChild("Head") then
+            createEsp(character, plr)
+        else
+            local c1, c2
+            c1 = character.ChildAdded:Connect(function(child)
+                if child.Name == "HumanoidRootPart" or child.Name == "Head" then
+                    if character:FindFirstChild("HumanoidRootPart") and character:FindFirstChild("Head") then
+                        if c1 then c1:Disconnect() end
+                        if c2 then c2:Disconnect() end
+                        createEsp(character, plr)
+                    end
+                end
+            end)
+            c2 = character.ChildRemoved:Connect(function(child)
+                if child.Name == "HumanoidRootPart" or child.Name == "Head" then
+                    removeEsp(character)
+                end
+            end)
+        end
+    end
+    plr.CharacterAdded:Connect(tryCreateEsp)
+    if plr.Character then
+        tryCreateEsp(plr.Character)
+    end
+end
+
+for _,plr in ipairs(Players:GetPlayers()) do
+    if plr ~= player then
+        setupEspForPlayer(plr)
+    end
+end
+Players.PlayerAdded:Connect(function(plr)
+    if plr ~= player then
+        setupEspForPlayer(plr)
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if not humanoid or not rootPart then return end
+    local speed = Vector3.new(rootPart.AssemblyLinearVelocity.X, 0, rootPart.AssemblyLinearVelocity.Z).Magnitude
+    speedLabel.Text = string.format("%.1fu/s", speed)
+    if jumping then
+        lastBunnyhop = tick()
+        bunnyhopActive = true
+        if speed > highestSpeed then
+            highestSpeed = speed
+            maxLabel.Text = string.format("(%.1fu/s)", highestSpeed)
+        end
+    else
+        if bunnyhopActive and tick() - lastBunnyhop > bunnyhopResetDelay then
+            highestSpeed = 0
+            maxLabel.Text = string.format("(%.1fu/s)", highestSpeed)
+            bunnyhopActive = false
+        end
+    end
+    if jumping then
+        local vel = rootPart.AssemblyLinearVelocity
+        local xzVel = Vector3.new(vel.X, 0, vel.Z)
+        humanoid.Jump = true
+        task.defer(function()
+            if humanoid:GetState() == Enum.HumanoidStateType.Freefall then
+                local curVel = rootPart.AssemblyLinearVelocity
+                rootPart.AssemblyLinearVelocity = Vector3.new(xzVel.X, curVel.Y, xzVel.Z)
+            end
+        end)
+    end
+end)
+
+userInputService.InputBegan:Connect(function(input, processed)
+    if not processed and input.KeyCode == Enum.KeyCode.Space then
+        humanoid, rootPart = getHumanoidAndRoot()
+        jumping = true
+        lastBunnyhop = tick()
+        bunnyhopActive = true
+    end
+end)
+userInputService.InputEnded:Connect(function(input, processed)
+    if input.KeyCode == Enum.KeyCode.Space then
+        jumping = false
+        if humanoid then humanoid.Jump = false end
+    end
+end)
+player.CharacterAdded:Connect(function()
+    humanoid, rootPart = getHumanoidAndRoot()
+end)
