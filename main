@@ -1,32 +1,170 @@
-local player = game.Players.LocalPlayer
-local userInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
+-- ESP/Visuals per Drawing API, Nametag/Healthbar/Distance. ESP-Check alle 0.2s auf Join/Leave/Respawn/Tod. Positionen laufen smooth, robust, kein stuck!
+
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
 
-local humanoid
-local rootPart
-local jumping = false
-local highestSpeed = 0
-local lastJump = tick()
-local bunnyhopActive = false
-local lastBunnyhop = tick()
-local bunnyhopResetDelay = 5
+local HEALTHBAR_BG = Color3.fromRGB(40,40,40)
+local HEALTHBAR_WIDTH = 4
+local NAMETAG_FONT = 3
 
-local BOX_COLOR_ALIVE = Color3.fromRGB(120,180,255)
-local BOX_COLOR_DEAD  = Color3.fromRGB(255,60,60)
-local BOX_THICKNESS = 2
-local BOX_Y_OFFSET = -3
-local BOX_PIXEL_PER_STUD = 32
-local BOX_MIN_SCALE = 0.3
-local BOX_MAX_SCALE = 1.2
-local BOX_MIN_DIST = 14
-local HEALTHBAR_WIDTH = 10
-local HEALTHBAR_OFFSET = 4
+local DRAWINGS = {}
+local PLAYER_STATES = {}
 
-local espConnections = {}
+local function removeDrawings(plr)
+    local t = DRAWINGS[plr]
+    if t then
+        for _,v in pairs(t) do
+            if v and v.Remove then pcall(function() v:Remove() end) end
+        end
+        DRAWINGS[plr]=nil
+    end
+    PLAYER_STATES[plr] = nil
+end
 
+local function createDrawings(plr)
+    local nametag = Drawing.new("Text")
+    nametag.Visible = false
+    nametag.Size = 17
+    nametag.Font = NAMETAG_FONT
+    nametag.Color = Color3.new(1,1,1)
+    nametag.Outline = true
+    nametag.OutlineColor = Color3.new(0,0,0)
+    nametag.Center = true
+    nametag.Text = plr.Name
+
+    local healthbg = Drawing.new("Line")
+    healthbg.Visible = false
+    healthbg.Color = HEALTHBAR_BG
+    healthbg.Thickness = HEALTHBAR_WIDTH
+
+    local healthfg = Drawing.new("Line")
+    healthfg.Visible = false
+    healthfg.Color = Color3.fromRGB(80,255,80)
+    healthfg.Thickness = HEALTHBAR_WIDTH-1
+
+    local disttag = Drawing.new("Text")
+    disttag.Visible = false
+    disttag.Size = 16
+    disttag.Font = NAMETAG_FONT
+    disttag.Color = Color3.new(1,1,1)
+    disttag.Outline = true
+    disttag.OutlineColor = Color3.new(0,0,0)
+    disttag.Center = true
+
+    DRAWINGS[plr] = {
+        nametag=nametag,
+        healthbg=healthbg,
+        healthfg=healthfg,
+        disttag=disttag
+    }
+end
+
+local function getPlayerState(plr)
+    local char = plr.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not char or not char:FindFirstChild("HumanoidRootPart") or not hum then
+        return "dead"
+    end
+    return hum.Health > 0 and "alive" or "dead"
+end
+
+-- 0.2s State Checker (Checkt Join, Leave, Respawn, Tod, Wiederbeleben)
+task.spawn(function()
+    while true do
+        local seen = {}
+        for _,plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer then
+                seen[plr] = true
+                local state = getPlayerState(plr)
+                if not PLAYER_STATES[plr] or PLAYER_STATES[plr] ~= state then
+                    PLAYER_STATES[plr] = state
+                    removeDrawings(plr)
+                    if state == "alive" then
+                        createDrawings(plr)
+                    end
+                end
+            end
+        end
+        -- Remove visuals for leaved players
+        for plr in pairs(DRAWINGS) do
+            if not seen[plr] then
+                removeDrawings(plr)
+            end
+        end
+        task.wait(0.2)
+    end
+end)
+
+-- RenderStepped: Position/Visual-Update nur für aktive Drawings!
+RunService.RenderStepped:Connect(function()
+    for plr, t in pairs(DRAWINGS) do
+        local char = plr.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not char or not char:FindFirstChild("HumanoidRootPart") or not hum or hum.Health <= 0 then
+            t.nametag.Visible = false
+            t.healthbg.Visible = false
+            t.healthfg.Visible = false
+            t.disttag.Visible = false
+        else
+            local hrp = char.HumanoidRootPart
+            local camera = workspace.CurrentCamera
+            local cframe = hrp.CFrame
+            local size = hrp.Size
+            local points, allOnScreen = {}, true
+            for x = -0.5,0.5,1 do
+                for y = -1,1,2 do
+                    for z = -0.5,0.5,1 do
+                        local world = cframe * Vector3.new(size.X*x, size.Y*y, size.Z*z)
+                        local s, o = camera:WorldToViewportPoint(world)
+                        if not o or s.Z < 0 then allOnScreen = false end
+                        table.insert(points, Vector2.new(s.X,s.Y))
+                    end
+                end
+            end
+            if not allOnScreen then
+                t.nametag.Visible = false
+                t.healthbg.Visible = false
+                t.healthfg.Visible = false
+                t.disttag.Visible = false
+            else
+                local minX, minY, maxX, maxY = math.huge, math.huge, -math.huge, -math.huge
+                for _,v in pairs(points) do
+                    minX = math.min(minX, v.X)
+                    minY = math.min(minY, v.Y)
+                    maxX = math.max(maxX, v.X)
+                    maxY = math.max(maxY, v.Y)
+                end
+                t.nametag.Position = Vector2.new((minX+maxX)/2, minY-18)
+                t.nametag.Visible = true
+
+                t.healthbg.From = Vector2.new(minX-8, maxY)
+                t.healthbg.To = Vector2.new(minX-8, minY)
+                t.healthbg.Visible = true
+
+                local hpFrac = math.clamp(hum.Health/hum.MaxHealth,0,1)
+                t.healthfg.From = Vector2.new(minX-8, maxY)
+                t.healthfg.To = Vector2.new(minX-8, maxY-(maxY-minY)*hpFrac)
+                t.healthfg.Color = Color3.fromRGB(255-math.floor(255*hpFrac),math.floor(255*hpFrac),0)
+                t.healthfg.Visible = true
+
+                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    local dist = (LocalPlayer.Character.HumanoidRootPart.Position - hrp.Position).Magnitude
+                    t.disttag.Text = string.format("%.1f studs", dist)
+                    t.disttag.Position = Vector2.new((minX+maxX)/2, maxY+18)
+                    t.disttag.Visible = true
+                else
+                    t.disttag.Visible = false
+                end
+            end
+        end
+    end
+end)
+
+-- ==== SPEED GUI + BUNNYHOP (wie gehabt) ====
 local function removeOldSpeedGui()
-    local playerGui = player:FindFirstChild("PlayerGui")
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
     if playerGui then
         local old = playerGui:FindFirstChild("SpeedDisplay")
         if old then old:Destroy() end
@@ -38,7 +176,7 @@ local function createSpeedGui()
     local screenGui = Instance.new("ScreenGui")
     screenGui.Name = "SpeedDisplay"
     screenGui.ResetOnSpawn = false
-    screenGui.Parent = player:WaitForChild("PlayerGui")
+    screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
     local maxLabel = Instance.new("TextLabel")
     maxLabel.Name = "MaxSpeedLabel"
@@ -71,8 +209,16 @@ end
 
 local speedLabel, maxLabel = createSpeedGui()
 
+local humanoid
+local rootPart
+local jumping = false
+local highestSpeed = 0
+local bunnyhopActive = false
+local lastBunnyhop = tick()
+local bunnyhopResetDelay = 5
+
 local function getHumanoidAndRoot()
-    local character = player.Character or player.CharacterAdded:Wait()
+    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
     local hum = character:FindFirstChildOfClass("Humanoid")
     while not hum do
         character.ChildAdded:Wait()
@@ -85,198 +231,6 @@ local function getHumanoidAndRoot()
     end
     return hum, rp
 end
-
-local function removeEsp(character)
-    if espConnections[character] then
-        for _,conn in ipairs(espConnections[character]) do
-            if conn then conn:Disconnect() end
-        end
-        espConnections[character] = nil
-    end
-    local bb = character:FindFirstChild("NameTag")
-    if bb then bb:Destroy() end
-    local bbHealth = character:FindFirstChild("HealthBar")
-    if bbHealth then bbHealth:Destroy() end
-end
-
-local function createEsp(character, playerObj)
-    removeEsp(character)
-    local rootPart = character:FindFirstChild("HumanoidRootPart")
-    local head = character:FindFirstChild("Head")
-    local hum = character:FindFirstChildOfClass("Humanoid")
-    if not rootPart or not head or not hum then return end
-
-    local function getCharSize()
-        local height, width = 5, 2
-        local torso = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
-        if torso then width = torso.Size.X + 1 end
-        local diff = (head.Position - rootPart.Position).Magnitude
-        height = diff*2 + 2
-        return height, width
-    end
-    local height, width = getCharSize()
-
-    local bb = Instance.new("BillboardGui")
-    bb.Name = "NameTag"
-    bb.Adornee = rootPart
-    bb.Size = UDim2.new(0, math.floor(width*BOX_PIXEL_PER_STUD), 0, math.floor(height*BOX_PIXEL_PER_STUD))
-    bb.StudsOffset = Vector3.new(0, height/2 + BOX_Y_OFFSET, 0)
-    bb.AlwaysOnTop = true
-    bb.Parent = rootPart
-
-    local frame = Instance.new("Frame")
-    frame.Name = "PlayerBox"
-    frame.Size = UDim2.new(1,0,1,0)
-    frame.BackgroundTransparency = 1
-    frame.BorderSizePixel = 0
-    frame.ZIndex = 1
-    frame.Parent = bb
-
-    local function makeLine(pos, size)
-        local line = Instance.new("Frame")
-        line.BackgroundColor3 = BOX_COLOR_ALIVE
-        line.BorderSizePixel = 0
-        line.BackgroundTransparency = 0
-        line.ZIndex = 2
-        line.Position = pos
-        line.Size = size
-        line.Parent = frame
-    end
-    makeLine(UDim2.new(0,0,0,0), UDim2.new(1,0,0,BOX_THICKNESS))
-    makeLine(UDim2.new(0,0,1,-BOX_THICKNESS), UDim2.new(1,0,0,BOX_THICKNESS))
-    makeLine(UDim2.new(0,0,0,0), UDim2.new(0,BOX_THICKNESS,1,0))
-    makeLine(UDim2.new(1,-BOX_THICKNESS,0,0), UDim2.new(0,BOX_THICKNESS,1,0))
-
-    local distLabel = Instance.new("TextLabel")
-    distLabel.Name = "ESPDist"
-    distLabel.Size = UDim2.new(1,0,0,22)
-    distLabel.Position = UDim2.new(0,0,1,6)
-    distLabel.BackgroundTransparency = 1
-    distLabel.TextColor3 = BOX_COLOR_ALIVE
-    distLabel.TextStrokeTransparency = 0.6
-    distLabel.TextScaled = true
-    distLabel.Font = Enum.Font.SourceSansBold
-    distLabel.Text = "..."
-    distLabel.Parent = bb
-
-    local bbHealth = Instance.new("BillboardGui")
-    bbHealth.Name = "HealthBar"
-    bbHealth.Adornee = rootPart
-    local boxPxW = math.floor(width*BOX_PIXEL_PER_STUD)
-    local boxPxH = math.floor(height*BOX_PIXEL_PER_STUD)
-    bbHealth.Size = UDim2.new(0, HEALTHBAR_WIDTH, 0, boxPxH)
-    bbHealth.StudsOffset = Vector3.new(-(width/2) - 0.41, height/2 + BOX_Y_OFFSET, 0)
-    bbHealth.AlwaysOnTop = true
-    bbHealth.Parent = character
-
-    local bgBar = Instance.new("Frame")
-    bgBar.Name = "BgBar"
-    bgBar.Size = UDim2.new(1,0,1,0)
-    bgBar.Position = UDim2.new(0,0,0,0)
-    bgBar.BackgroundColor3 = Color3.fromRGB(40,40,40)
-    bgBar.BorderSizePixel = 0
-    bgBar.BackgroundTransparency = 0.3
-    bgBar.Parent = bbHealth
-
-    local fgBar = Instance.new("Frame")
-    fgBar.Name = "FgBar"
-    fgBar.AnchorPoint = Vector2.new(0,1)
-    fgBar.Position = UDim2.new(0,0,1,0)
-    fgBar.Size = UDim2.new(1,0,1,0)
-    fgBar.BackgroundColor3 = Color3.fromRGB(100,255,100)
-    fgBar.BorderSizePixel = 0
-    fgBar.BackgroundTransparency = 0
-    fgBar.Parent = bbHealth
-
-    local connections = {}
-    connections[1] = RunService.RenderStepped:Connect(function()
-        if not bb.Parent or not bbHealth.Parent or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
-        local myRoot = player.Character:FindFirstChild("HumanoidRootPart")
-        local dist = (myRoot.Position - rootPart.Position).Magnitude
-        distLabel.Text = string.format("%.1f studs", dist)
-        local scale = BOX_MAX_SCALE
-        if dist > BOX_MIN_DIST then
-            scale = math.max(BOX_MIN_SCALE, BOX_MAX_SCALE * (BOX_MIN_DIST/dist))
-        end
-        local height, width = getCharSize()
-        local boxPxW = math.floor(width*BOX_PIXEL_PER_STUD*scale)
-        local boxPxH = math.floor(height*BOX_PIXEL_PER_STUD*scale)
-        bb.Size = UDim2.new(0, boxPxW, 0, boxPxH)
-        bbHealth.Size = UDim2.new(0, HEALTHBAR_WIDTH*scale, 0, boxPxH)
-        bbHealth.StudsOffset = Vector3.new(-(width*scale/2)-((HEALTHBAR_WIDTH*scale)/BOX_PIXEL_PER_STUD)-HEALTHBAR_OFFSET/BOX_PIXEL_PER_STUD, height/2 + BOX_Y_OFFSET, 0)
-        distLabel.TextScaled = true
-
-        local h = character:FindFirstChildOfClass("Humanoid")
-        local hpFrac = math.clamp(h.Health/h.MaxHealth,0,1)
-        fgBar.Size = UDim2.new(1,0,hpFrac,0)
-        fgBar.Position = UDim2.new(0,0,1,0)
-        fgBar.AnchorPoint = Vector2.new(0,1)
-        fgBar.BackgroundColor3 = Color3.fromRGB(
-            255-(math.floor(255*hpFrac)),
-            math.floor(255*hpFrac),
-            0
-        )
-
-        local isDead = (h and h.Health == 0)
-        local boxColor = isDead and BOX_COLOR_DEAD or BOX_COLOR_ALIVE
-        for _,line in ipairs(frame:GetChildren()) do
-            if line:IsA("Frame") then
-                line.BackgroundColor3 = boxColor
-            end
-        end
-        distLabel.TextColor3 = boxColor
-    end)
-    if hum then
-        connections[2] = hum.Died:Connect(function()
-            removeEsp(character)
-        end)
-    end
-    connections[3] = character.AncestryChanged:Connect(function(_, parent)
-        if not parent then
-            removeEsp(character)
-        end
-    end)
-    espConnections[character] = connections
-end
-
-local function setupEspForPlayer(plr)
-    local function tryCreateEsp(character)
-        if character:FindFirstChild("HumanoidRootPart") and character:FindFirstChild("Head") then
-            createEsp(character, plr)
-        else
-            local c1, c2
-            c1 = character.ChildAdded:Connect(function(child)
-                if child.Name == "HumanoidRootPart" or child.Name == "Head" then
-                    if character:FindFirstChild("HumanoidRootPart") and character:FindFirstChild("Head") then
-                        if c1 then c1:Disconnect() end
-                        if c2 then c2:Disconnect() end
-                        createEsp(character, plr)
-                    end
-                end
-            end)
-            c2 = character.ChildRemoved:Connect(function(child)
-                if child.Name == "HumanoidRootPart" or child.Name == "Head" then
-                    removeEsp(character)
-                end
-            end)
-        end
-    end
-    plr.CharacterAdded:Connect(tryCreateEsp)
-    if plr.Character then
-        tryCreateEsp(plr.Character)
-    end
-end
-
-for _,plr in ipairs(Players:GetPlayers()) do
-    if plr ~= player then
-        setupEspForPlayer(plr)
-    end
-end
-Players.PlayerAdded:Connect(function(plr)
-    if plr ~= player then
-        setupEspForPlayer(plr)
-    end
-end)
 
 RunService.RenderStepped:Connect(function()
     if not humanoid or not rootPart then return end
@@ -309,7 +263,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
-userInputService.InputBegan:Connect(function(input, processed)
+UserInputService.InputBegan:Connect(function(input, processed)
     if not processed and input.KeyCode == Enum.KeyCode.Space then
         humanoid, rootPart = getHumanoidAndRoot()
         jumping = true
@@ -317,12 +271,12 @@ userInputService.InputBegan:Connect(function(input, processed)
         bunnyhopActive = true
     end
 end)
-userInputService.InputEnded:Connect(function(input, processed)
+UserInputService.InputEnded:Connect(function(input, processed)
     if input.KeyCode == Enum.KeyCode.Space then
         jumping = false
         if humanoid then humanoid.Jump = false end
     end
 end)
-player.CharacterAdded:Connect(function()
+LocalPlayer.CharacterAdded:Connect(function()
     humanoid, rootPart = getHumanoidAndRoot()
 end)
