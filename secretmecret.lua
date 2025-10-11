@@ -38,6 +38,7 @@ local Window = Library:CreateWindow({
 local TabAim = Window:AddTab('Aim')
 local TabVisuals = Window:AddTab('Visuals')
 local TabMisc = Window:AddTab('Misc')
+local TabConfig = Window:AddTab('Config')
 
 -- === AIM TAB ===
 local AimGroup = TabAim:AddLeftGroupbox('Aimbot')
@@ -73,6 +74,36 @@ VisualsGroup:AddSlider('esp_maxdist', {
 local MiscGroup = TabMisc:AddLeftGroupbox('Movement')
 MiscGroup:AddToggle('bunnyhop', { Text = 'Auto Bunnyhop', Default = false })
 MiscGroup:AddToggle('autostrafe', { Text = 'Auto Strafe', Default = false })
+
+-- === CONFIG TAB ===
+local ConfigGroup = TabConfig:AddLeftGroupbox('Config System')
+Library:SetFolder('EzyCheatRivals')
+Library:SetConfigsFolder('EzyCheatRivals/configs')
+ConfigGroup:AddLabel('Save and load your cheat configs here!')
+
+ConfigGroup:AddInput('configname', {Text = 'Config Name', Default = 'default'})
+ConfigGroup:AddButton('Save Config', function()
+    local name = Options.configname.Value
+    Library:SaveConfig(name)
+    Library:Notify('Saved config: '..name)
+end)
+ConfigGroup:AddButton('Load Config', function()
+    local name = Options.configname.Value
+    Library:LoadConfig(name)
+    Library:Notify('Loaded config: '..name)
+end)
+ConfigGroup:AddButton('Set Default', function()
+    local name = Options.configname.Value
+    Library:SetDefaultConfig(name)
+    Library:Notify('Default config set: '..name)
+end)
+ConfigGroup:AddButton('Refresh Config List', function()
+    Library:BuildConfigSection(TabConfig)
+    Library:Notify('Config list refreshed!')
+end)
+ConfigGroup:AddButton('Unload Cheat', function()
+    Library:Unload()
+end)
 
 -- === FOV Drawing ===
 local FOVCircle = Drawing.new("Circle")
