@@ -1,3 +1,11 @@
+-- === SECRETMECRET AUTOLOADER (WICHTIG: Funktioniert nach Teleport!) ===
+local url = "https://raw.githubusercontent.com/ljashub/bloxstrike-beta/main/secretmecret.lua"
+if queue_on_teleport then
+    queue_on_teleport("loadstring(game:HttpGet('" .. url .. "'))()")
+end
+loadstring(game:HttpGet(url))()
+
+-- === REST DES CHEATS (Linoria, Services, UI, Configs etc.) ===
 local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
 local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
 local Players = game:GetService("Players")
@@ -6,6 +14,7 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
+local TeleportService = game:GetService("TeleportService")
 
 local Window = Library:CreateWindow({
     Title = 'EzyCheat | Rivals',
@@ -16,6 +25,7 @@ local Window = Library:CreateWindow({
 local TabAim = Window:AddTab('Aim')
 local TabVisuals = Window:AddTab('Visuals')
 local TabMisc = Window:AddTab('Misc')
+local TabConfig = Window:AddTab('Config')
 
 -- === AIM TAB ===
 local AimGroup = TabAim:AddLeftGroupbox('Aimbot')
@@ -51,6 +61,66 @@ VisualsGroup:AddSlider('esp_maxdist', {
 local MiscGroup = TabMisc:AddLeftGroupbox('Movement')
 MiscGroup:AddToggle('bunnyhop', { Text = 'Auto Bunnyhop', Default = false })
 MiscGroup:AddToggle('autostrafe', { Text = 'Auto Strafe', Default = false })
+
+-- === CONFIG TAB (Links: Controls, Rechts: Liste) ===
+local ConfigGroup = TabConfig:AddLeftGroupbox('Config System')
+ConfigGroup:AddLabel('Save and load your cheat configs here!')
+ConfigGroup:AddInput('configname', {Text = 'Config Name', Default = 'default'})
+
+local function GetConfigs()
+    local files = {}
+    pcall(function()
+        for _,v in ipairs(listfiles and listfiles("LinoriaConfigs") or {}) do
+            if v:sub(-6) == ".json" then
+                local name = v:match("([^\\/]*)%.json$")
+                if name then table.insert(files, name) end
+            end
+        end
+    end)
+    table.sort(files)
+    return files
+end
+
+local ConfigListBox = TabConfig:AddRightGroupbox('Config List')
+local ConfigListObj = ConfigListBox:AddDropdown('config_list', { Values = {}, Text = 'Your Configs', Multi = false })
+
+local function RefreshConfigList()
+    local configs = GetConfigs()
+    Options.config_list:SetValues(configs)
+end
+RefreshConfigList()
+
+ConfigGroup:AddButton('Save Config', function()
+    local name = Options.configname.Value
+    Library:SaveConfig(name)
+    Library:Notify('Saved config: '..name)
+    RefreshConfigList()
+end)
+ConfigGroup:AddButton('Load Config', function()
+    local name = Options.configname.Value
+    Library:LoadConfig(name)
+    Library:Notify('Loaded config: '..name)
+end)
+ConfigGroup:AddButton('Set Default', function()
+    local name = Options.configname.Value
+    Library:SetDefaultConfig(name)
+    Library:Notify('Default config set: '..name)
+end)
+ConfigGroup:AddButton('Refresh Config List', function()
+    RefreshConfigList()
+    Library:Notify('Config list refreshed!')
+end)
+ConfigGroup:AddButton('Unload Cheat', function()
+    Library:Unload()
+end)
+
+Options.config_list:OnChanged(function()
+    local selected = Options.config_list.Value
+    if selected and selected ~= "" then
+        Library:LoadConfig(selected)
+        Library:Notify('Loaded config: '..selected)
+    end
+end)
 
 -- === FOV Drawing ===
 local FOVCircle = Drawing.new("Circle")
@@ -266,10 +336,11 @@ local function createESPForPlayer(player)
         local distToPlayer = (Camera.CFrame.Position - hrp.Position).Magnitude
 
         if distToPlayer > Options.esp_maxdist.Value then
-            if ESPObjects[player].Box then ESPObjects[player].Box.Visible = false end
-            if ESPObjects[player].Name then ESPObjects[player].Name.Visible = false end
-            if ESPObjects[player].Distance then ESPObjects[player].Distance.Visible = false end
-            if ESPObjects[player].Health then ESPObjects[player].Health.Visible = false end
+            for _,obj in pairs(ESPObjects[player]) do
+                if typeof(obj) == "Instance" or typeof(obj) == "table" then
+                    pcall(function() obj.Visible = false end)
+                end
+            end
             return
         end
 
@@ -336,7 +407,24 @@ local function createESPForPlayer(player)
 end
 
 Players.PlayerAdded:Connect(createESPForPlayer)
-Players.PlayerRemoving:Connect(function(plr) if ESPObjects[plr] then for _, obj in pairs(ESPObjects[plr]) do if obj.Remove then pcall(function() obj:Remove() end) end end ESPObjects[plr]=nil end end)
+Players.PlayerRemoving:Connect(function(plr)
+    if ESPObjects[plr] then
+        for _, obj in pairs(ESPObjects[plr]) do
+            if typeof(obj) == "Instance" or typeof(obj) == "table" then
+                pcall(function() obj.Visible = false end)
+            end
+        end
+        ESPObjects[plr]=nil
+    end
+end)
 for _, player in ipairs(Players:GetPlayers()) do createESPForPlayer(player) end
 
-Library:OnUnload(clearESP)
+Library:OnUnload(function()
+    for _, v in pairs(ESPObjects) do
+        for _, obj in pairs(v) do
+            if typeof(obj) == "Instance" or typeof(obj) == "table" then
+                pcall(function() obj.Visible = false end)
+            end
+        end
+    end
+end)
